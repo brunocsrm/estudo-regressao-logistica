@@ -1,0 +1,2 @@
+"0","set.seed(1)"
+"0","dados <- map2(n, prob_X2, gera_dados, q, beta)"

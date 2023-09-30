@@ -1,0 +1,2 @@
+"0","m_beta <- rep(0, q)"
+"0","s_beta <- 10*diag(q)"

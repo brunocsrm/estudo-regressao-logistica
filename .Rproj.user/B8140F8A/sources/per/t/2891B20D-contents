@@ -1,0 +1,631 @@
+---
+title: "Relatório"
+author: "Bruno Carvalho Silva Ribeiro"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}  #make every figure with caption = h, this was the fix
+  - \floatplacement{table}{H}
+execute: 
+  warning: false
+  echo: false
+format: 
+  pdf:
+    number-sections: true
+    number-depth: 3
+    fig-pos: 'H'
+    
+editor: visual
+---
+
+
+
+# Carregando pacotes
+
+```{r echo=FALSE}
+library(rstan)
+library(coda)
+library(purrr)
+library(kableExtra)
+library(plotrix)
+```
+
+# Configurações Iniciais
+
+```{r }
+rm(list=ls(all=TRUE))
+rstan_options(auto_write=TRUE)
+options(mc.cores = parallel::detectCores())
+set.seed(1)
+```
+
+# Declaração de Funções
+
+```{r}
+# Declaração de funções
+set.seed(1)
+
+faz_tab_bayes <- function(samp, real, q){
+  
+  # recebe um objeto do tipo samp 
+  # real é um vetor com os valores reais dos parametros
+  # q é o tamanho do vetor de betas
+  aux = cbind(samp$beta)
+  me = apply(aux, 2, mean)   # média
+  md = apply(aux, 2, median) # mediana
+  sd = apply(aux, 2, sd)     # desvio padrão
+  aux = as.mcmc(aux)
+  hpd = HPDinterval(aux)
+  tab = cbind(unlist(real), me, md, sd, hpd[,'lower'], hpd[,'upper'], hpd[,'upper'] - hpd[,'lower'])
+  rownames(tab) = c(paste0('beta', 0:(q-1)))
+  colnames(tab) = c('true', 'mean', 'median', 's.d.', 'HPD_inf', 'HPD_sup', 'Amplitude')
+  res <- round(tab, 4)              # mostrar saída com 4 casas decimais 
+  return(res)
+  
+}
+
+
+faz_tab_classica <- function(mod, q){
+  # mod é um glm
+  # q é o tamanho do vetor de betas
+  tab_classica <- summary(mod)$coefficients
+  rownames(tab_classica) <- c(paste0('beta', 0:(q-1)))
+  res <- round(tab_classica, 4)
+  return(res)
+}
+
+
+gera_bayes <- function(n, prob_X2){
+  
+  #n <- 200
+  beta <- c(1.5, 0.5, -0.5, 1.0, -1.0)
+  q <- length(beta)
+  real <- list(beta)
+  names(real) <- c('beta')
+  
+  x <- array(1, c(n, q))
+  
+  x[,2] <- rbinom(n, 1, prob_X2)
+  
+  
+  for(i in 3:q){x[,i] <- runif(n, -1, 1)}
+  
+  eta <- x %*% as.matrix(beta) |> as.vector()
+  
+  theta <- exp(eta) / (1 + exp(eta))
+  
+  y <- numeric(n)
+  for(i in 1:n){y[i] <- rbinom(1, 1, theta[i])}
+  
+  m_beta <- rep(0, q)
+  s_beta <- 10*diag(q)
+  
+  data <- list(
+    n = n, 
+    q = q, 
+    y = y, 
+    x = x,
+    m_beta = m_beta,
+    s_beta = s_beta
+  )
+  
+  pars <- c("beta")
+  
+  # Lista de sementes de inicialização (2 cadeias):
+  init = list()
+  init[[1]] <- list(beta=rep(0,q))
+  init[[2]] <- list(beta=runif(q,-1,1))
+  
+  iter = 2000
+  warmup = 1000
+  chains = 2
+  
+  out <- stan(file = "./Stan/Reglogit.stan", data = data,
+                 iter = iter, warmup = warmup, chains = chains,
+                 pars = pars, init = init, verbose = FALSE)
+  
+  return(out)
+  
+}
+
+
+gera_bayes_probit <- function(n){
+  
+  #n <- 200
+  beta <- c(1.5, 0.5, -0.5, 1.0, -1.0)
+  q <- length(beta)
+  real <- list(beta)
+  names(real) <- c('beta')
+  
+  x <- array(1, c(n, q))
+  
+  x[,2] <- rbinom(n, 1, 0.5)
+  
+  
+  for(i in 3:q){x[,i] <- runif(n, -1, 1)}
+  
+  eta <- x %*% as.matrix(beta) |> as.vector()
+  
+  theta <- pnorm(eta)
+  
+  y <- numeric(n)
+  for(i in 1:n){y[i] <- rbinom(1, 1, theta[i])}
+  
+  m_beta <- rep(0, q)
+  s_beta <- 10*diag(q)
+  
+  data <- list(
+    n = n, 
+    q = q, 
+    y = y, 
+    x = x,
+    m_beta = m_beta,
+    s_beta = s_beta
+  )
+  
+  pars <- c("beta")
+  
+  # Lista de sementes de inicialização (2 cadeias):
+  init = list()
+  init[[1]] <- list(beta=rep(0,q))
+  init[[2]] <- list(beta=runif(q,-1,1))
+  
+  iter = 2000
+  warmup = 1000
+  chains = 2
+  
+  out <- stan(file = "./Stan/Regprobit.stan", data = data,
+                 iter = iter, warmup = warmup, chains = chains,
+                 pars = pars, init = init, verbose = FALSE)
+  
+  return(out)
+  
+}
+
+
+calcula_segs_bayes <- function(tabela){
+  
+  # Calcula a matrix para ser criado o centipede.plot do plotrix
+  # a primeira linha é a média
+  # a segunda linha é o limite inferior
+  # a terceira linha é o limite superior
+ 
+  medias <- tabela[,2]
+  lower_limit <- tabela[,5]
+  upper_limit <- tabela[,6]
+  segs <- matrix(c(medias, lower_limit, upper_limit), byrow=T, nrow=3, ncol=5)
+  return(segs)
+  
+}
+
+
+calcula_segs_classica <- function(tabela){
+  
+  z <- abs(qnorm(0.025))
+  pontual_estimation <- tabela[,1]
+  std_error <- tabela[,2]
+  lower_limit <- pontual_estimation- z*std_error
+  upper_limit <- pontual_estimation + z*std_error
+  segs <- segs <- matrix(c(pontual_estimation, lower_limit, upper_limit), byrow=T, nrow=3, ncol=5)
+  
+  return(segs)
+  
+}
+
+
+gera_dados <- function(n, prob_X2, q, beta){
+  
+  x <- array(1, c(n, q))
+
+  x[,2] <- rbinom(n, 1, prob_X2)
+  
+  
+  for(i in 3:q){x[,i] <- runif(n, -1, 1)}
+  
+  eta <- x %*% as.matrix(beta) |> as.vector()
+  
+  theta <- exp(eta) / (1 + exp(eta))
+  
+  y <- numeric(n)
+  for(i in 1:n){y[i] <- rbinom(1, 1, theta[i])}
+
+  res <- data.frame(
+    x = x,
+    y = y,
+    eta = eta,
+    theta = theta
+  )
+  
+  return(res)
+  
+}
+
+gera_dados_probit <- function(n, q, beta){
+  
+  x <- array(1, c(n, q))
+
+  x[,2] <- rbinom(n, 1, 0.5)
+  
+  
+  for(i in 3:q){x[,i] <- runif(n, -1, 1)}
+  
+  eta <- x %*% as.matrix(beta) |> as.vector()
+  
+  theta <- pnorm(eta)
+  
+  y <- numeric(n)
+  for(i in 1:n){y[i] <- rbinom(1, 1, theta[i])}
+
+  res <- data.frame(
+    x = x,
+    y = y,
+    eta = eta,
+    theta = theta
+  )
+  
+  return(res)
+  
+}
+
+```
+
+# Gerando dados logit
+
+```{r cache=TRUE}
+n <- list(200, 200, 1000)
+prob_X2 <- list(0.5, 0.1, 0.5)
+
+beta <- c(1.5, 0.5, -0.5, 1.0, -1.0)
+q <- length(beta)
+real <- list(beta)
+names(real) <- c('beta')
+
+output <- map2(n, prob_X2, gera_bayes)
+
+samp <- vector(mode = "list", length = 3)
+for(i in seq_along(samp)){samp[[i]] <- extract(output[[i]])}
+```
+
+# Verificando convergência das cadeias
+Os traceplots que se seguem, referem-se as cadeias geradas para as tarefas 1,2 
+e 4. Para tarefa 4, a análise de convergência de cadeia foi colocada separadamente,
+uma vez que se trata de outra função de ligação: probit.
+
+n = 200 prob = 0.5
+
+```{r }
+#| label: cadeia_1
+#| layout-nrow: 3
+#| layout-ncol: 3
+{ plot( samp[[1]]$beta[,1], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta0',
+        main = 'Traceplot de beta0', col = 'blue') 
+  abline( h = real$beta[1], lwd = 5, col = 'red') }
+
+{ plot( samp[[1]]$beta[,2], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta1',
+        main = 'Traceplot de beta1', col = 'blue') 
+  abline( h = real$beta[2], lwd = 5, col = 'red') }
+
+{ plot( samp[[1]]$beta[,3], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta2',
+        main = 'Traceplot de beta2', col = 'blue') 
+  abline( h = real$beta[3], lwd = 5, col = 'red') }
+
+{ plot( samp[[1]]$beta[,4], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta3',
+        main = 'Traceplot de beta3', col = 'blue') 
+  abline( h = real$beta[4], lwd = 5, col = 'red') }
+
+{ plot( samp[[1]]$beta[,5], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta4',
+        main = 'Traceplot de beta4', col = 'blue') 
+  abline( h = real$beta[5], lwd = 5, col = 'red') }
+
+```
+
+n = 200 prob = 0.1
+
+```{r}
+#| label: cadeia_2
+#| layout-nrow: 3
+#| layout-ncol: 3
+
+{ plot( samp[[2]]$beta[,1], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta0',
+        main = 'Traceplot de beta0', col = 'blue') 
+  abline( h = real$beta[1], lwd = 5, col = 'red') }
+
+{ plot( samp[[2]]$beta[,2], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta1',
+        main = 'Traceplot de beta1', col = 'blue') 
+  abline( h = real$beta[2], lwd = 5, col = 'red') }
+
+{ plot( samp[[2]]$beta[,3], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta2',
+        main = 'Traceplot de beta2', col = 'blue') 
+  abline( h = real$beta[3], lwd = 5, col = 'red') }
+
+{ plot( samp[[2]]$beta[,4], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta3',
+        main = 'Traceplot de beta3', col = 'blue') 
+  abline( h = real$beta[4], lwd = 5, col = 'red') }
+
+{ plot( samp[[2]]$beta[,5], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta4',
+        main = 'Traceplot de beta4', col = 'blue') 
+  abline( h = real$beta[5], lwd = 5, col = 'red') }
+
+```
+
+n = 1000 prob = 0.5
+
+```{r}
+#| label: cadeia_3
+#| layout-nrow: 3
+#| layout-ncol: 3
+
+{ plot( samp[[3]]$beta[,1], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta0',
+        main = 'Traceplot de beta0', col = 'blue') 
+  abline( h = real$beta[1], lwd = 5, col = 'red') }
+
+{ plot( samp[[3]]$beta[,2], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta1',
+        main = 'Traceplot de beta1', col = 'blue') 
+  abline( h = real$beta[2], lwd = 5, col = 'red') }
+
+{ plot( samp[[3]]$beta[,3], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta2',
+        main = 'Traceplot de beta2', col = 'blue') 
+  abline( h = real$beta[3], lwd = 5, col = 'red') }
+
+{ plot( samp[[3]]$beta[,4], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta3',
+        main = 'Traceplot de beta3', col = 'blue') 
+  abline( h = real$beta[4], lwd = 5, col = 'red') }
+
+{ plot( samp[[3]]$beta[,5], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta4',
+        main = 'Traceplot de beta4', col = 'blue') 
+  abline( h = real$beta[5], lwd = 5, col = 'red') }
+```
+
+Nos três gráficos apresentados anteriormente, pode-se realizar uma análise abrangente e detalhada que revela com clareza a notável convergência demonstrada pelas cadeias de Markov Chain Monte Carlo (MCMC) em relação aos valores reais dos parâmetros. Essa convergência é de extrema importância, uma vez que constitui um indicador sólido da eficácia do método empregado na estimativa dos parâmetros do modelo em questão.
+
+Primeiramente, é importante destacar que o uso do MCMC é uma abordagem fundamental em estatística bayesiana e em uma ampla variedade de campos, como modelagem estatística, aprendizado de máquina e ciência de dados. Através da geração de cadeias de amostras, o MCMC permite explorar o espaço de parâmetros de um modelo probabilístico, obtendo estimativas confiáveis e precisas. Nesse contexto, a convergência das cadeias é um dos principais critérios para determinar a qualidade dos resultados obtidos.
+
+Nos gráficos, é perceptível que as curvas das cadeias de MCMC estabilizam-se gradualmente, convergindo para valores consistentes e próximos dos parâmetros reais do modelo. Esse comportamento é indicativo de que o algoritmo MCMC está explorando eficazmente o espaço de parâmetros e encontrando soluções que se aproximam da verdadeira distribuição subjacente. Tal convergência é uma garantia de que as estimativas obtidas são robustas e confiáveis, uma vez que múltiplas cadeias independentes corroboram os resultados.
+
+A importância dessa boa convergência vai além da mera validação dos resultados. Ela implica diretamente na qualidade das decisões e conclusões que podem ser derivadas a partir das estimativas dos parâmetros. Quando as cadeias convergem de maneira sólida e consistente, é possível ter maior confiança nos valores obtidos, tornando-os mais utilizáveis em cenários de tomada de decisão, previsões futuras e inferência estatística.
+
+Além disso, a observação de boa convergência nas cadeias de MCMC também sinaliza que o método foi adequadamente configurado, com escolhas sensatas para hiperparâmetros, número de iterações e condições iniciais. Isso é essencial para garantir a eficiência computacional e a obtenção de resultados representativos.
+
+Portanto, a análise dos três gráficos fornece um sólido respaldo à utilização do MCMC para estimar os parâmetros do modelo em questão. A convergência observada demonstra que o método está desempenhando seu papel de forma excepcional, fornecendo estimativas confiáveis que podem servir como base sólida para análises subsequentes e tomada de decisões informadas. Esse sucesso na obtenção de convergência é um testemunho do rigor estatístico e da eficácia da abordagem MCMC na modelagem e inferência de parâmetros em contextos diversos.
+
+# Tarefa 1
+- n = 200 vs n = 1000 Bayesiana
+- Tabelas n = 200 e n = 1000
+- Gráfico plotrix
+
+```{r}
+tab_bayes_1 <- faz_tab_bayes(samp[[1]], real, length(beta))
+tab_bayes_2 <- faz_tab_bayes(samp[[3]], real, length(beta))
+tab_bayes_3 <- faz_tab_bayes(samp[[2]], real, length(beta))
+```
+
+
+```{r}
+#| label: tbl-bayes_1
+#| tbl-cap: "Resultados da tarefa 1"
+#| tbl-subcap: 
+#|   - "(a) Tamanho de amostra n = 1000"
+#|   - "(b) Tamanho de amostra n = 200"
+#| layout-ncol: 2
+
+
+library(knitr)
+kbl(tab_bayes_1, booktabs = T)%>%
+kable_styling(latex_options = c("striped", "scale_down",  "hold_position"))
+
+kbl(tab_bayes_2, booktabs = T)%>%
+kable_styling(latex_options = c("striped", "scale_down",  "hold_position"))
+
+```
+
+A tabela @tbl-bayes_1 apresenta dois cenários distintos que permitem uma análise comparativa das estimativas pontuais obtidas por meio de um modelo bayesiano. No cenário (a), os resultados são derivados de uma amostra de tamanho considerável, composta por 1000 observações. Por outro lado, no cenário (b), temos uma amostra de menor dimensão, contendo apenas 200 observações. Uma observação imediata é que, ao examinarmos esses cenários lado a lado, emerge uma diferença notável no desempenho das estimativas pontuais.
+
+No cenário (a), onde a amostra consiste de 1000 observações, a maioria das estimativas pontuais revelou-se mais precisa e robusta em comparação ao cenário (b). Isso sugere que uma maior quantidade de dados à disposição proporcionou ao modelo bayesiano uma base mais sólida para calcular as estimativas dos parâmetros. A precisão aumentada nas estimativas pontuais pode ser atribuída ao fato de que uma amostra maior tende a capturar mais fielmente a distribuição subjacente, permitindo ao modelo extrair informações mais confiáveis sobre os parâmetros.
+
+Entretanto, é interessante notar que há uma exceção notável: o parâmetro beta 2. No cenário (b), apesar da amostra menor, a estimativa pontual para o beta 2 supera a do cenário (a). Isso pode ser explicado por diversos fatores. Por exemplo, em situações em que a amostra menor é mais homogênea ou específica para a característica do parâmetro beta 2, o modelo bayesiano pode ser mais eficaz em estimá-lo, mesmo com menos dados. Esse resultado enfatiza a importância de considerar as particularidades de cada parâmetro e a natureza dos dados ao interpretar as estimativas pontuais.
+
+É válido ressaltar que a escolha entre uma amostra de tamanho maior ou menor depende de diversos fatores, incluindo os recursos disponíveis para a coleta de dados, o custo envolvido e os objetivos da análise. O cenário (a) com 1000 observações representa uma abordagem mais rica em dados, enquanto o cenário (b) com 200 observações pode ser uma alternativa viável quando há limitações na obtenção de dados. Em ambos os casos, a interpretação cuidadosa das estimativas pontuais é crucial para tirar conclusões relevantes e informadas.
+
+Portanto, a análise da tabela @tbl-bayes_1 revela que a dimensão da amostra desempenha um papel crítico na precisão das estimativas pontuais em um modelo bayesiano. Ela destaca a necessidade de considerar as características específicas de cada parâmetro e as condições do estudo ao determinar o tamanho da amostra adequado para a análise. Além disso, ressalta que a interpretação das estimativas pontuais deve ser realizada com cautela, levando em consideração o contexto e as nuances dos dados em questão.
+
+```{r warning=FALSE}
+#| label: fig-plot_bayes1
+#| fig-cap: "Gráfico da tarefa 1"
+#| fig-subcap: 
+#|   - " Tamanho de amostra n = 200"
+#|   - " Tamanho de amostra n = 1000"
+#| layout-ncol: 2
+segs1 <- calcula_segs_bayes(tab_bayes_1)
+segs2 <- calcula_segs_bayes(tab_bayes_2)
+centipede.plot(segs1, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+centipede.plot(segs2, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+```
+Escrever comentários quando conseguir colocar os valores verdadeiros no gráfico
+
+# Tarefa 2
+- n = 200
+- Bayesiano vs frequentista
+- Tabelas bayes x Frequentista
+
+```{r}
+set.seed(1)
+dados <- map2(n, prob_X2, gera_dados, q, beta)
+```
+
+
+
+```{r}
+mod <- glm(y~. -x.1 -eta -theta, family = binomial(link = "logit"), data = dados[[1]])
+tab_classica_1 <- faz_tab_classica(mod, length(beta))
+```
+
+```{r}
+#| label: tbl-bayes_classica_1
+#| tbl-cap: "Resultados da tarefa 2"
+#| tbl-subcap: 
+#|   - "(a) Bayes n = 200"
+#|   - "(b) Frequentista n = 200"
+#| layout-ncol: 2
+
+library(knitr)
+kbl(tab_bayes_1, booktabs = T)%>%
+kable_styling(latex_options = c("striped", "scale_down",  "hold_position"))
+
+kbl(tab_classica_1, booktabs = T)%>%
+kable_styling(latex_options = c("striped", "scale_down",  "hold_position"))
+```
+
+
+A tabela @tbl-bayes_classica_1 constitui uma ferramenta essencial na análise comparativa dos resultados de estimação obtidos por dois métodos distintos: o método bayesiano, representado no cenário (a), e o método frequentista, apresentado no cenário (b). A observação inicial e fundamental que emerge desses resultados é a notável semelhança entre as estimativas obtidas por ambas as abordagens.
+
+Primeiramente, é importante contextualizar a diferença entre os métodos bayesianos e frequentistas. O método bayesiano se baseia na aplicação do teorema de Bayes para estimar parâmetros desconhecidos, incorporando informações prévias na forma de distribuições de probabilidade a priori. Por outro lado, o método frequentista se concentra em estimar parâmetros com base na frequência de ocorrência dos eventos em um grande número de experimentos repetidos. Cada um desses métodos possui pressupostos e abordagens distintas, o que geralmente leva à expectativa de resultados diferentes.
+
+No entanto, a análise dos resultados na tabela revela que, surpreendentemente, as estimativas pontuais obtidas pelos métodos bayesiano e frequentista são notavelmente similares. Isso é um achado significativo, pois sugere que, para o conjunto de dados e o modelo em questão, ambos os métodos estão convergindo para estimativas que estão em concordância substancial. Essa convergência entre os resultados dos dois métodos é digna de nota e pode ter implicações importantes para a interpretação e aplicação dessas estimativas.
+
+Uma explicação possível para essa convergência é que o modelo em análise pode ser relativamente simples, com dados que são informativos o suficiente para levar a estimativas consistentes, independentemente da abordagem estatística utilizada. Além disso, a seleção de prioris no método bayesiano e a escolha de técnicas de estimação no método frequentista podem ter sido feitas de forma a minimizar as diferenças entre as abordagens.
+
+Essa observação de resultados similares em ambas as abordagens também levanta a questão da interpretação e escolha do método mais apropriado em situações semelhantes. Embora os resultados sejam similares neste caso específico, é importante lembrar que os métodos bayesianos e frequentistas podem diferir significativamente em outros contextos. Portanto, a escolha do método deve ser guiada pela natureza dos dados, pelos pressupostos do modelo e pelos objetivos da análise.
+
+Em resumo, a tabela @tbl-bayes_classica_1 oferece uma visão valiosa sobre a concordância entre as estimativas obtidas por meio dos métodos bayesianos e frequentistas em um contexto específico. A similaridade dos resultados destaca a importância da análise cuidadosa das abordagens estatísticas escolhidas, bem como a necessidade de considerar as nuances do problema em questão ao selecionar o método mais apropriado. Além disso, isso sublinha a complexidade e a riqueza da estatística, que oferece uma variedade de abordagens para abordar problemas estatísticos com diferentes níveis de sofisticação e rigor.
+
+```{r}
+#| label: fig-plot_bayes_classica_1
+#| fig-cap: "Gráfico da tarefa 2"
+#| fig-subcap: 
+#|   - " Bayes n = 200"
+#|   - " Frequentista n = 1000"
+#| layout-ncol: 2
+
+segs3 <- calcula_segs_classica(tab_classica_1)
+centipede.plot(segs1, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+centipede.plot(segs3, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+```
+
+
+
+# Tarefa 3
+- Desbalanceamento de X2 Bayesiana
+- n = 200 prob = 0.5 e n = 200 prob = 0.1
+
+```{r}
+#| label: fig-plot_bayes2
+#| fig-cap: "Gráfico da tarefa 3"
+#| fig-subcap: 
+#|   - " Bayes n = 200 prob(X2 = 1) = 0.5"
+#|   - " Bayes n = 200 prob(X2 = 1) = 0.1"
+#| layout-ncol: 2
+segs4 <- calcula_segs_bayes(tab_bayes_3)
+centipede.plot(segs1, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+centipede.plot(segs4, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+```
+
+# Tarefa 4
+- Usar a mesma matriz X e os mesmos valores reais
+- n = 200
+- link logit vs link probit
+- tabelas logit vs probit
+- plotrix logit vs probit
+
+```{r cache=TRUE}
+set.seed(1)
+dados_probit <- gera_dados_probit(200, q, beta)
+output_probt <- gera_bayes_probit(200)
+samp_probit <- extract(output_probt)
+```
+
+
+```{r}
+#| label: tbl-bayes_probit_1
+#| tbl-cap: "Resultados da tarefa 4"
+#| tbl-subcap: 
+#|   - "(a) logit"
+#|   - "(b) probit"
+#| layout-ncol: 2
+
+
+tab_bayes_probit <- faz_tab_bayes(samp_probit, real, q)
+kbl(tab_bayes_1, booktabs = T)%>%
+kable_styling(latex_options = c("striped", "scale_down"))
+kbl(tab_bayes_probit, booktabs = T)%>%
+kable_styling(latex_options = c("striped", "scale_down"))
+```
+
+A tabela @tbl-bayes_probit_1 
+
+Verificando convergência de cadeias para o probit traz um comparativo entre os
+resultados obtidos pelo método logit e pelo método logit. Vale resslatar que 
+na regressão logística tem-se $y_i\text{~}Bernoulli(\theta_i)$. No primeiro método
+usa-se $\theta_i = \frac{e^{\eta_i}}{1+e^{\eta_i}}$ enquanto que, no segundo, 
+usa-se $\theta_i=\Phi_{N(0,1)}(\eta_i)$. Nota-se que os resultados obtidos demonstra
+piora na qualidade de estimação pelo método probit. Talvez isso possa ser explicado 
+pelo fato de que o probit precisaria de uma tamanho maior de amostra uma vez que uma
+das suposições do modelo de regressão é que os betas são normais padrão, somente
+se n for suficientemente grande. Como usamos uma amostra de tamanho 200, é possível que 
+ela não tenha sido o suficiente.
+
+Obs.: posteriormente eu gerei com 1000 e os resultados não melhoraram.
+O que poderia estar acontecendo? beta0, por exemplo, foi de 4 para 3.
+
+```{r}
+#| label: cadeia_4
+#| layout-nrow: 3
+#| layout-ncol: 3
+
+
+{ plot( samp_probit$beta[,1], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta0',
+        main = 'Traceplot de beta0', col = 'blue') 
+  abline( h = real$beta[1], lwd = 5, col = 'red') }
+
+{ plot( samp_probit$beta[,2], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta1',
+        main = 'Traceplot de beta1', col = 'blue') 
+  abline( h = real$beta[2], lwd = 5, col = 'red') }
+
+{ plot( samp_probit$beta[,3], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta2',
+        main = 'Traceplot de beta2', col = 'blue') 
+  abline( h = real$beta[3], lwd = 5, col = 'red') }
+
+{ plot( samp_probit$beta[,4], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta3',
+        main = 'Traceplot de beta3', col = 'blue') 
+  abline( h = real$beta[4], lwd = 5, col = 'red') }
+
+{ plot( samp_probit$beta[,5], type = 'l', cex.lab = 1.5, cex.axis = 1.5,
+        xlab = 'iterações', ylab = 'beta4',
+        main = 'Traceplot de beta4', col = 'blue') 
+  abline( h = real$beta[5], lwd = 5, col = 'red') }
+
+```
+
+Os resultados da figura @cadeia_4 refletem o que foi mostrado na tabela. Novamente,
+a convergência do modelo probit se mostrou menos eficaz do que o logit.
+
+```{r}
+#| label: fig-plot_bayes3
+#| fig-cap: "Gráfico da tarefa 4"
+#| fig-subcap: 
+#|   - " Bayes n = 200 logit"
+#|   - " Bayes n = 200 probit"
+#| layout-ncol: 2
+segs5 <- calcula_segs_bayes(tab_bayes_probit)
+centipede.plot(segs1, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+centipede.plot(segs5, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("",5), xlab = "")
+```
+
+

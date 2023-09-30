@@ -1,0 +1,27 @@
+"0","#| label: tbl-bayes_1"
+"2","Warning messages:
+"
+"2","1: "
+"2","In value[[3L]](cond) :"
+"2"," Failed to parse chunk options in body:
+Error in parse(text = code, keep.source = FALSE): <text>:1:27: unexpected symbol
+1: alist( label: tbl-bayes_1 tbl
+                              ^
+
+"
+"2","2: "
+"2","In opts$engine <- unlist(strsplit(rmdChunkOpts, split = ""(\\s|,)+""))[[1]] :"
+"2","
+ "
+"2"," Coercing LHS to a list
+"
+"0","#| tbl-cap: ""Resultados da tarefa 1"""
+"0","#| tbl-subcap: "
+"0","#|   - ""(a) Tamanho de amostra n = 1000"""
+"0","#|   - ""(b) Tamanho de amostra n = 200"""
+"0","#| layout-ncol: 2"
+"0",""
+"0",""
+"0","library(knitr)"
+"0","kbl(tab_bayes_1, booktabs = T)%>%"
+"0","kable_styling(latex_options = c(""striped"", ""scale_down"",  ""hold_position""))"

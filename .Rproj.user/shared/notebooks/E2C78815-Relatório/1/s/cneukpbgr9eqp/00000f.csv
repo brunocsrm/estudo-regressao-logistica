@@ -1,0 +1,2 @@
+"0","mod <- glm(y~. -x.1 -eta -theta, family = binomial(link = ""logit""), data = dados[[1]])"
+"0","tab_classica_1 <- faz_tab_classica(mod, length(beta))"

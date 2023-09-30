@@ -1,0 +1,3 @@
+"0",""
+"0","kbl(tab_classica_1, booktabs = T)%>%"
+"0","kable_styling(latex_options = c(""striped"", ""scale_down"",  ""hold_position""))"

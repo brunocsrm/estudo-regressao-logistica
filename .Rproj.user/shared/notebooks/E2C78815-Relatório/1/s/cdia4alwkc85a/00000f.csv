@@ -1,0 +1,25 @@
+"0","#| label: fig-plot_bayes1"
+"2","Warning messages:
+"
+"2","1: "
+"2","In value[[3L]](cond) :"
+"2"," Failed to parse chunk options in body:
+Error in parse(text = code, keep.source = FALSE): <text>:1:31: unexpected symbol
+1: alist( label: fig-plot_bayes1 fig
+                                  ^
+
+"
+"2","2: "
+"2","In opts$engine <- unlist(strsplit(rmdChunkOpts, split = ""(\\s|,)+""))[[1]] :"
+"2","
+ "
+"2"," Coercing LHS to a list
+"
+"0","#| fig-cap: ""Gráfico da tarefa 1"""
+"0","#| fig-subcap: "
+"0","#|   - "" Tamanho de amostra n = 200"""
+"0","#|   - "" Tamanho de amostra n = 1000"""
+"0","#| layout-ncol: 2"
+"0","segs1 <- calcula_segs_bayes(tab_bayes_1)"
+"0","segs2 <- calcula_segs_bayes(tab_bayes_2)"
+"0","centipede.plot(segs1, left.labels = paste0('beta', 0:(q-1)), right.labels = rep("""",5), xlab = """")"

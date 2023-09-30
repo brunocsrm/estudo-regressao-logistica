@@ -1,0 +1,4 @@
+"0","#setwd(""./Stan"")"
+"0","output <- stan(file = ""./Stan/Reglogit.stan"", data = data,"
+"0","               iter = iter, warmup = warmup, chains = chains,"
+"0","               pars = pars, init = init, verbose = FALSE)"

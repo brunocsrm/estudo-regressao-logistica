@@ -1,0 +1,3 @@
+"0","tab_bayes_1 <- faz_tab_bayes(samp[[1]], real, length(beta))"
+"0","tab_bayes_2 <- faz_tab_bayes(samp[[3]], real, length(beta))"
+"0","tab_bayes_3 <- faz_tab_bayes(samp[[2]], real, length(beta))"

@@ -1,0 +1,5 @@
+"0",""
+"0","{ plot( samp_probit$beta[,4], type = 'l', cex.lab = 1.5, cex.axis = 1.5,"
+"0","        xlab = 'iterações', ylab = 'beta3',"
+"0","        main = 'Traceplot de beta3', col = 'blue') "
+"0","  abline( h = real$beta[4], lwd = 5, col = 'red') }"

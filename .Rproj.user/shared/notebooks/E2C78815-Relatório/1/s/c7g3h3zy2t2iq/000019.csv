@@ -1,0 +1,2 @@
+"0","kbl(tab_bayes_probit, booktabs = T)%>%"
+"0","kable_styling(latex_options = c(""striped"", ""scale_down""))"
