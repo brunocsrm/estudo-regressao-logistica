@@ -1,6 +1,0 @@
-"0","set.seed(1)"
-"0","dados_probit <- gera_dados_probit(200, q, beta)"
-"0","output_probt <- gera_bayes_probit(200)"
-"2","hash mismatch so recompiling; make sure Stan code ends with a blank line
-"
-"0","samp_probit <- extract(output_probt)"
